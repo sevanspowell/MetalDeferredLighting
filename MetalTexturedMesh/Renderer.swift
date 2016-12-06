@@ -225,10 +225,12 @@ class Renderer : NSObject, MTKViewDelegate
             print("Unable to load texture from main bundle")
             return nil
         }
-
+        
         let width = Int(self.view.drawableSize.width)
         let height = Int(self.view.drawableSize.height)
         let library = device.newDefaultLibrary()!
+        print(width)
+        print(height)
         
         // GBUFFER
         // Build gBuffer textures
@@ -575,7 +577,7 @@ class Renderer : NSObject, MTKViewDelegate
         // we factor the current aspect ration into our projection matrix. We also select
         // sensible values for the vertical view angle and the distances to the near and far planes.
         let viewSize = self.view.bounds.size
-        let aspectRatio = Float(viewSize.width / viewSize.height)
+        let aspectRatio = Float(view.drawableSize.width / view.drawableSize.height)
         let verticalViewAngle = radians_from_degrees(65)
         let nearZ: Float = 0.1
         let farZ: Float = 100.0
@@ -609,8 +611,8 @@ class Renderer : NSObject, MTKViewDelegate
             lightConstants[i].far = farZ;
         }
         
-        lightFragmentInput.screenSize.x = Float(viewSize.width)
-        lightFragmentInput.screenSize.y = Float(viewSize.height)
+        lightFragmentInput.screenSize.x = Float(view.drawableSize.width)
+        lightFragmentInput.screenSize.y = Float(view.drawableSize.height)
     }
 
     func render(_ view: MTKView) {
@@ -762,6 +764,9 @@ class Renderer : NSObject, MTKViewDelegate
     func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {
         let width = Int(size.width);
         let height = Int(size.height);
+        
+        print(width)
+        print(height)
         
         let albedoDesc: MTLTextureDescriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba8Unorm, width: width, height: height, mipmapped: false)
         albedoDesc.sampleCount = 1
