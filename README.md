@@ -9,6 +9,8 @@ Metal I: A practical approach to your first Metal app" found
 [here](https://developer.apple.com/library/prerelease/content/samplecode/AdoptingMetalI/Introduction/Intro.html)
 (Copyright (C) 2016 Apple Inc. All rights reserved.)
 
+Please let me know if you find any issues!
+
 ## Requirements
 
 ### Build
