@@ -30,8 +30,6 @@ struct PointLight {
     var attenuationLinear = Float(0.7)
     var attenuationExp = Float(1.8)
     var color = float3(0.0, 0.0, 0.0)
-    var ambientIntensity = Float(0.3)
-    var diffuseIntensity = Float (0.3)
     var radius = Float(1.0)
 }
 
@@ -42,8 +40,6 @@ class Renderer : NSObject, MTKViewDelegate
 
     let device: MTLDevice
     let commandQueue: MTLCommandQueue
-    //let renderPipelineState: MTLRenderPipelineState
-    //let depthStencilState: MTLDepthStencilState
     let sampler: MTLSamplerState
     let cubeTexture: MTLTexture
     let mesh: Mesh
@@ -56,7 +52,6 @@ class Renderer : NSObject, MTKViewDelegate
     var camPos = float3(0, 0, 2.5)
     var camSpeed = 0.2
     
-    //let gBufferPipelineState: MTLRenderPipelineState
     //let compositionPipelineState: MTLRenderPipelineState
     
     var gBufferAlbedoTexture: MTLTexture
@@ -72,7 +67,6 @@ class Renderer : NSObject, MTKViewDelegate
     var lightVolumeRenderPassDescriptor: MTLRenderPassDescriptor = MTLRenderPassDescriptor()
     let lightVolumeRenderPipeline: MTLRenderPipelineState
     let lightVolumeSampler: MTLSamplerState
-    //var lightVolumeDepthTexture: MTLTexture
     
     let lightNumber = 3
     var lightConstants = [Constants]()
@@ -90,18 +84,6 @@ class Renderer : NSObject, MTKViewDelegate
     let stencilPassDepthStencilState: MTLDepthStencilState
     let stencilRenderPassDescriptor: MTLRenderPassDescriptor
     let stencilRenderPipeline: MTLRenderPipelineState
-
-    /*var structureModel: AAPLOBJModel
-    var structureModelGroup: AAPLOBJModelGroup
-    var structureModelGroupIndexDataType: MTLIndexType
-    
-    var structureVertexBuffer: MTLBuffer
-    var structureIndexBuffer: MTLBuffer
-   
-    var structureModelGroupBumpTextures: NSMutableArray
-    var structureModelGroupDiffuseTextures: NSMutableArray
-    var structureModelGroupSpecularTextures: NSMutableArray
-    var texture2DCache: NSMutableDictionary*/
     
     init?(mtkView: MTKView) {
         
@@ -129,35 +111,6 @@ class Renderer : NSObject, MTKViewDelegate
         commandQueue = device.makeCommandQueue()
         commandQueue.label = "Command Queue master"
 
-        /*
-        // Compile the functions and other state into a pipeline object.
-        do {
-            renderPipelineState = try Renderer.buildRenderPipelineWithDevice(device, view: mtkView)
-        }
-        catch {
-            print("Unable to compile render pipeline state")
-            return nil
-        }
-        
-        // Compile albedo pipeline state
-        do {
-            gBufferPipelineState = try Renderer.buildGBufferPipelineStateWithDevice(device, view: mtkView)
-        }
-        catch {
-            print("Unable to compile albedo pipeline state")
-            return nil
-        }
-        
-        
-        do {
-            compositionPipelineState = try Renderer.buildCompositionPipelineStateWithDevice(device, view: mtkView)
-        }
-        catch {
-            print("Unable to compile albedo pipeline state")
-            return nil
-        }
-        */
-        
         for _ in 0...(lightNumber - 1) {
             lights.append(PointLight())
             lightConstants.append(Constants())
@@ -166,7 +119,6 @@ class Renderer : NSObject, MTKViewDelegate
             lightRate.append(0)
         }
         
-        //lights[0].worldPosition = float3(2, 2, 2)
         lightAngle[0] = Float.pi/2
         lightRadius[0] = 2.0
         lightRate[0] = 1.0
@@ -174,10 +126,7 @@ class Renderer : NSObject, MTKViewDelegate
         lights[0].attenuationConstant = 0.1
         lights[0].attenuationLinear = 1
         lights[0].attenuationExp = 5
-        lights[0].ambientIntensity = 0.1
-        lights[0].diffuseIntensity = 0.3
         
-        //lights[1].worldPosition = float3(-2, 2, 2)
         lightAngle[1] = 0
         lightRadius[1] = 2.0
         lightRate[1] = 1.5
@@ -185,9 +134,7 @@ class Renderer : NSObject, MTKViewDelegate
         lights[1].attenuationConstant = 0.1
         lights[1].attenuationLinear = 1
         lights[1].attenuationExp = 5
-        lights[1].ambientIntensity = 0.1
-        lights[1].diffuseIntensity = 0.3
-        
+
         lightAngle[2] = Float.pi
         lightRadius[2] = 2.0
         lightRate[2] = 1.3
@@ -195,8 +142,6 @@ class Renderer : NSObject, MTKViewDelegate
         lights[2].attenuationConstant = 0.1
         lights[2].attenuationLinear = 1
         lights[2].attenuationExp = 5
-        lights[2].ambientIntensity = 0.1
-        lights[2].diffuseIntensity = 0.3
         
         /*
         lights[2].worldPosition = float3(-0.4, 0, 1.3)
@@ -204,8 +149,6 @@ class Renderer : NSObject, MTKViewDelegate
         lights[2].attenuationConstant = 0.1
         lights[2].attenuationLinear = 0.6
         lights[2].attenuationExp = 9
-        lights[2].ambientIntensity = 0.1
-        lights[2].diffuseIntensity = 0.3
         */
         
         for i in 0...(lightNumber - 1) {
@@ -229,8 +172,6 @@ class Renderer : NSObject, MTKViewDelegate
         let width = Int(self.view.drawableSize.width)
         let height = Int(self.view.drawableSize.height)
         let library = device.newDefaultLibrary()!
-        print(width)
-        print(height)
         
         // GBUFFER
         // Build gBuffer textures
@@ -362,7 +303,6 @@ class Renderer : NSObject, MTKViewDelegate
         let lightVolumeStencilOp: MTLStencilDescriptor = MTLStencilDescriptor()
         lightVolumeStencilOp.stencilCompareFunction = .notEqual           // Only pass if not equal to reference value (ref. value is 0)
         lightVolumeStencilOp.stencilFailureOperation = .keep              // Don't modify stencil value at all
-        // NOT SURE IF THE BELOW ACTUALLY WORKS - Fragments may be processed in parallel, will the fragments from the back-facing and front-facing polygons be executed in sequence?
         lightVolumeStencilOp.depthStencilPassOperation = .keep
         lightVolumeStencilOp.depthFailureOperation = .keep                // Depth test is set to always succeed
         
@@ -372,17 +312,6 @@ class Renderer : NSObject, MTKViewDelegate
         lightVolumeDepthStencilStateDesc.backFaceStencil = lightVolumeStencilOp
         lightVolumeDepthStencilStateDesc.frontFaceStencil = lightVolumeStencilOp
         lightVolumeDepthStencilState = device.makeDepthStencilState(descriptor: lightVolumeDepthStencilStateDesc)
-        
-        /*
-        // Depth
-        let lightVolumeDepthDesc: MTLTextureDescriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .depth32Float_stencil8, width: width, height: height, mipmapped: false)
-        lightVolumeDepthDesc.sampleCount = 1
-        lightVolumeDepthDesc.storageMode = .private
-        lightVolumeDepthDesc.textureType = .type2D
-        lightVolumeDepthDesc.usage = [.renderTarget]
-        
-        lightVolumeDepthTexture = device.makeTexture(descriptor: lightVolumeDepthDesc)
-        */
         
         // Build light volume render pass descriptor
         // Get current render pass descriptor instead
@@ -548,18 +477,6 @@ class Renderer : NSObject, MTKViewDelegate
         samplerDescriptor.magFilter = filter
         return device.makeSamplerState(descriptor: samplerDescriptor)
     }
-
-    /*
-    class func buildDepthStencilStateWithDevice(_ device: MTLDevice,
-                                                compareFunc: MTLCompareFunction,
-                                                isWriteEnabled: Bool) -> MTLDepthStencilState
-    {
-        let desc = MTLDepthStencilDescriptor()
-        desc.depthCompareFunction = compareFunc
-        desc.isDepthWriteEnabled = isWriteEnabled
-        return device.makeDepthStencilState(descriptor: desc)
-    }
-    */
     
     func calcCartesianPositionFromPolar(angle: Float, radius: Float) -> float3 {
         return float3(radius * cos(angle), radius * sin(angle), 1.0)
@@ -576,7 +493,7 @@ class Renderer : NSObject, MTKViewDelegate
         // So that the figure doesn't get distorted when the window changes size or rotates,
         // we factor the current aspect ration into our projection matrix. We also select
         // sensible values for the vertical view angle and the distances to the near and far planes.
-        let viewSize = self.view.bounds.size
+        //let viewSize = self.view.bounds.size
         let aspectRatio = Float(view.drawableSize.width / view.drawableSize.height)
         let verticalViewAngle = radians_from_degrees(65)
         let nearZ: Float = 0.1
@@ -705,13 +622,6 @@ class Renderer : NSObject, MTKViewDelegate
             lightEncoder.endEncoding()
         }
         
-        /*
-        if let drawable = currDrawable
-        {
-            commandBuffer2.present(drawable)
-        }
-        */
-        
         commandBuffer2.enqueue()
         commandBuffer2.commit()
         
@@ -811,17 +721,6 @@ class Renderer : NSObject, MTKViewDelegate
         clearDesc.usage = [.renderTarget, .shaderRead]
         
         gBufferClearTexture = device.makeTexture(descriptor: clearDesc)
-        
-        /*
-        // Depth
-        let lightVolumeDepthDesc: MTLTextureDescriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .depth32Float_stencil8, width: width, height: height, mipmapped: false)
-        lightVolumeDepthDesc.sampleCount = 1
-        lightVolumeDepthDesc.storageMode = .private
-        lightVolumeDepthDesc.textureType = .type2D
-        lightVolumeDepthDesc.usage = [.renderTarget]
-        
-        lightVolumeDepthTexture = device.makeTexture(descriptor: lightVolumeDepthDesc)
-        */
         
         gBufferRenderPassDescriptor.colorAttachments[1].texture = gBufferAlbedoTexture
 

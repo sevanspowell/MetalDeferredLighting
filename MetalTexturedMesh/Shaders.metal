@@ -1,17 +1,5 @@
-/*
-    Copyright (C) 2016 Apple Inc. All Rights Reserved.
-    See LICENSE.txt for this sample’s licensing information
-    
-    Abstract:
-    Shader file with functions for rendering lit, textured geometry.
-*/
-
 #include <metal_stdlib>
 using namespace metal;
-
-float eyeSpaceDepthToNDC(float zEye, float near, float far);
-float ndcDepthToDepthBuf(float zNDC);
-float4 calcPointLight(float3 fragWorldPos, float3 lightWorldPos, float3 normal, float3 lightColor, float ambientIntensity, float diffuseIntensity, float attenuationConstant, float attenuationLinear, float attenuationExp);
 
 struct Constants {
     float4x4 modelViewProjectionMatrix;
@@ -27,19 +15,6 @@ struct VertexIn {
     packed_float3 position;
     packed_float3 normal;
     packed_float2 texCoords;
-};
-
-
-struct DepthOut {
-    float4 position[[position]];
-    float4 ecPosition;
-};
-
-struct VertexOutput {
-    float4 position [[position]];
-    float3 v_normal;
-    float3 v_texcoord;
-    float v_linearDepth;
 };
 
 typedef struct
@@ -60,7 +35,6 @@ struct GBufferOut {
     float4 albedo [[color(1)]];
     float4 normal [[color(0)]];
     float4 position [[color(2)]];
-    //half4 clear [[color(3)]];
 };
 
 struct VertexPassThruIn {
@@ -92,9 +66,7 @@ struct PointLight {
     float attenuationExp;
     
     float3 color;
-    float ambientIntensity;
-    float diffuseIntensity;
-    
+
     float radius;
 };
 
@@ -130,32 +102,6 @@ vertex LightVertexOut lightVolumeVert(const device LightVertexIn *vertices [[buf
     out.position = uniforms.modelViewProjectionMatrix * float4(vertices[vid].position, 1.0);
     
     return out;
-}
-
-float4 calcPointLight(float3 fragWorldPos, float3 lightWorldPos, float3 normal, float3 lightColor, float ambientIntensity, float diffuseIntensity, float attenuationConstant, float attenuationLinear, float attenuationExp) {
-    float3 lightDirection = fragWorldPos - lightWorldPos;
-    float distance = length(lightDirection);
-    lightDirection = normalize(lightDirection);
-    
-    float4 ambientColor = float4(lightColor * ambientIntensity, 1.0);
-    float diffuseFactor = 1 - dot(normal, lightDirection);
-    
-    float4 diffuseColor = float4(0, 0, 0, 0);
-    float4 specularColor = float4(0, 0, 0, 0);
-    
-    return float4(diffuseFactor, diffuseFactor, diffuseFactor, 1.0);
-    
-    if (diffuseFactor > 0.0) {
-        diffuseColor = float4(lightColor * diffuseIntensity * diffuseFactor, 1.0);
-    }
-    
-    float4 color = (ambientColor + diffuseColor + specularColor);
-    
-    float attenuation = attenuationConstant + attenuationLinear * distance + attenuationExp * distance * distance;
-    
-    attenuation = max(1.0, attenuation);
-    
-    return color / attenuation;
 }
 
 fragment float4 lightVolumeFrag(LightVertexOut in [[stage_in]],
@@ -253,167 +199,3 @@ fragment GBufferOut gBufferFrag(VertexOut in [[stage_in]],
     
     return output;
 }
-
-/*
-vertex VertexOutput gBufferVert(device VertexIn *vertices [[buffer(0)]],
-                              device Constants &uniforms [[buffer(1)]],
-                              uint vertexId [[vertex_id]])
-{
-    VertexOutput output;
-    
-    VertexIn vData = vertices[vertexId];
-    
-    output.v_normal = uniforms.normalMatrix * float3(vData.normal);
-    output.v_linearDepth = (uniforms.modelViewMatrix * float4(vData.position, 1.0f)).z;
-    output.v_texcoord = float3(vData.texCoords, 1.0);
-    
-    return output;
-}
-
-fragment FragOutput gBufferFrag(VertexOutput in [[stage_in]],
-                                texture2d<float> albedo_texture [[texture(0)]])
-{
-    constexpr sampler linear_sampler(min_filter::linear, mag_filter::linear);
-    float4 albedo = albedo_texture.sample(linear_sampler, in.v_texcoord.xy);
-    
-    FragOutput output;
-    
-    output.albedo = albedo;
-    output.normal = float4(in.v_normal, 1.0);
-    output.depth = in.v_linearDepth;
-    
-    return output;
-}
-
-vertex VertexPassThru compositionVertex(constant float2 *posData [[buffer(0)]],
-                                        uint vid [[vertex_id]])
-{
-    VertexPassThru output;
-    output.position = float4(posData[vid], 0.0f, 1.0f);
-    return output;
-}
-
-fragment float4 compositionFrag(VertexPassThru in [[stage_in]],
-                                FragOutput gBuffers)
-{
-    float3 normal = gBuffers.normal.rgb;
-    float4 diffuse = gBuffers.albedo;
-    
-    return diffuse;
-}
-
-vertex VertexOut vertex_show_albedo(device VertexIn *vertices [[buffer(0)]],
-                                  constant Constants &uniforms [[buffer(1)]],
-                                  uint vertexId [[vertex_id]])
-{
-    float3 modelPosition = vertices[vertexId].position;
-    float3 modelNormal = vertices[vertexId].normal;
-    
-    VertexOut out;
-    // Multiplying the model position by the model-view-projection matrix moves us into clip space
-    out.position = uniforms.modelViewProjectionMatrix * float4(modelPosition, 1);
-    // Copy the vertex normal and texture coordinates
-    out.normal = uniforms.normalMatrix * modelNormal;
-    out.texCoords = vertices[vertexId].texCoords;
-    return out;
-}
-
-fragment half4 fragment_show_albedo(VertexOut fragmentIn [[stage_in]],
-                                     texture2d<float, access::sample> tex2d [[texture(0)]],
-                                     sampler sampler2d [[sampler(0)]])
-{
-    // Sample the texture to get the surface color at this point
-    half3 surfaceColor = half3(tex2d.sample(sampler2d, fragmentIn.texCoords).rrr);
-    // Re-normalize the interpolated surface normal
-    //half3 normal = normalize(half3(fragmentIn.normal));
-    // Compute the ambient color contribution
-    //half3 color = ambientLightIntensity * surfaceColor;
-    half3 color = surfaceColor;
-    // Calculate the diffuse factor as the dot product of the normal and light direction
-    //float diffuseFactor = saturate(dot(normal, -lightDirection));
-    // Add in the diffuse contribution from the light
-    //color += diffuseFactor * diffuseLightIntensity * surfaceColor;
-    return half4(color, 1);
-}
-
-vertex VertexOut vertex_show_normals(device VertexIn *vertices [[buffer(0)]],
-                                     constant Constants &uniforms [[buffer(1)]],
-                                     uint vertexId [[vertex_id]])
-{
-    float3 modelPosition = vertices[vertexId].position;
-    float3 modelNormal = vertices[vertexId].normal;
-    
-    VertexOut out;
-    out.position = uniforms.modelViewProjectionMatrix * float4(modelPosition, 1);
-    out.normal = uniforms.normalMatrix * modelNormal;
-    
-    return out;
-}
-
-fragment float4 fragment_show_normals(VertexOut fragmentIn [[stage_in]])
-{
-    float3 color = (normalize(fragmentIn.normal) * 0.5 + 0.5);
-    return float4(color, 1);
-}
-
-vertex DepthOut vertex_show_depth(device VertexIn *vertices [[buffer(0)]],
-                                     constant Constants &uniforms [[buffer(1)]],
-                                     uint vertexId [[vertex_id]])
-{
-    float3 modelPosition = vertices[vertexId].position;
-
-    DepthOut out;
-    out.ecPosition = uniforms.modelViewMatrix * float4(modelPosition, 1);
-    out.position = uniforms.projectionMatrix * out.ecPosition;
-    
-    return out;
-}
-
-fragment float4 fragment_show_depth(DepthOut fragmentIn [[stage_in]], constant Constants &uniforms [[buffer(1)]])
-{
-    float zEye = fragmentIn.ecPosition.z;
-    float zNDC = eyeSpaceDepthToNDC(zEye, 0.1, 100);
-    float zBuf = ndcDepthToDepthBuf(zNDC);
-    
-    return float4(zEye, zEye, zEye, 1);
-}
-
-vertex DepthOut vertex_show_depth(device VertexIn *vertices [[buffer(0)]],
-                                  constant Constants &uniforms [[buffer(1)]],
-                                  uint vertexId [[vertex_id]])
-{
-    float3 modelPosition = vertices[vertexId].position;
-    
-    DepthOut out;
-    out.ecPosition = uniforms.modelViewMatrix * float4(modelPosition, 1);
-    out.position = uniforms.projectionMatrix * out.ecPosition;
-    
-    return out;
-}
-
-fragment float4 fragment_show_depth(DepthOut fragmentIn [[stage_in]], constant Constants &uniforms [[buffer(1)]])
-{
-    float zEye = fragmentIn.ecPosition.z;
-    float zNDC = eyeSpaceDepthToNDC(zEye, uniforms.cameraNear, uniforms.cameraFar);
-    float zBuf = ndcDepthToDepthBuf(zNDC);
-    
-    return float4(zBuf, zBuf, zBuf, 1);
-}
-
-//Z in Normalized Device Coordinates
-//http://www.songho.ca/opengl/gl_projectionmatrix.html
-float eyeSpaceDepthToNDC(float zEye, float near, float far) {
-    float A = -(far + near) / (far - near); //projectionMatrix[2].z
-    float B = -2.0 * far * near / (far - near); //projectionMatrix[3].z;
-
-    float zNDC = (A * zEye + B) / -zEye;
-    return zNDC;
-}
-
-
-//depth buffer encoding
-//http://stackoverflow.com/questions/6652253/getting-the-true-z-value-from-the-depth-buffer
-float ndcDepthToDepthBuf(float zNDC) {
-    return 0.5 * zNDC + 0.5;
-}
-*/
