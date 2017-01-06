@@ -52,13 +52,10 @@ class Renderer : NSObject, MTKViewDelegate
     var camPos = float3(0, 0, 2.5)
     var camSpeed = 0.2
     
-    //let compositionPipelineState: MTLRenderPipelineState
-    
     var gBufferAlbedoTexture: MTLTexture
     var gBufferNormalTexture: MTLTexture
     var gBufferDepthTexture: MTLTexture
     var gBufferPositionTexture: MTLTexture
-    var gBufferClearTexture: MTLTexture
     let gBufferDepthStencilState: MTLDepthStencilState
     var gBufferRenderPassDescriptor: MTLRenderPassDescriptor
     let gBufferRenderPipeline: MTLRenderPipelineState
@@ -76,14 +73,11 @@ class Renderer : NSObject, MTKViewDelegate
     var lightRadius = [Float]()
     var lightRate = [Float]()
     
-    /*
-    var compositeRenderPassDescriptor: MTLRenderPassDescriptor = MTLRenderPassDescriptor()
-    let compositeRenderPipeline: MTLRenderPipelineState
-    */
-    
     let stencilPassDepthStencilState: MTLDepthStencilState
     let stencilRenderPassDescriptor: MTLRenderPassDescriptor
     let stencilRenderPipeline: MTLRenderPipelineState
+    
+    var compositeTexture: MTLTexture
     
     init?(mtkView: MTKView) {
         
@@ -155,6 +149,7 @@ class Renderer : NSObject, MTKViewDelegate
             let lightMax: Float = max(max(lights[i].color.x, lights[i].color.y), lights[i].color.z)
             let lightRadius: Float = (-lights[i].attenuationLinear + sqrt(lights[i].attenuationLinear * lights[i].attenuationLinear - 4 * lights[i].attenuationExp * (lights[i].attenuationConstant - (256.0/5.0) * lightMax))) / (2.0 * lights[i].attenuationExp)
             lights[i].radius = lightRadius
+            print(lightRadius)
         }
         
         lightSphere = Mesh(sphereWithSize: 1.0, device: device)!
@@ -194,7 +189,7 @@ class Renderer : NSObject, MTKViewDelegate
         gBufferNormalTexture = device.makeTexture(descriptor: normalDesc)
         
         // Depth
-        let depthDesc: MTLTextureDescriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .depth32Float, width: width, height: height, mipmapped: false)
+        let depthDesc: MTLTextureDescriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .depth32Float_stencil8, width: width, height: height, mipmapped: false)
         depthDesc.sampleCount = 1
         depthDesc.storageMode = .private
         depthDesc.textureType = .type2D
@@ -218,7 +213,7 @@ class Renderer : NSObject, MTKViewDelegate
         clearDesc.textureType = .type2D
         clearDesc.usage = [.renderTarget, .shaderRead]
         
-        gBufferClearTexture = device.makeTexture(descriptor: clearDesc)
+        compositeTexture = device.makeTexture(descriptor: clearDesc)
         
         // Build gBuffer depth stencil state
         let depthStencilStateDesc: MTLDepthStencilDescriptor = MTLDepthStencilDescriptor()
@@ -246,7 +241,7 @@ class Renderer : NSObject, MTKViewDelegate
         gBufferRenderPassDescriptor.colorAttachments[2].storeAction = .store
         
         gBufferRenderPassDescriptor.colorAttachments[3].clearColor = MTLClearColorMake(0, 0, 0, 1)
-        gBufferRenderPassDescriptor.colorAttachments[3].texture = gBufferClearTexture
+        gBufferRenderPassDescriptor.colorAttachments[3].texture = compositeTexture
         gBufferRenderPassDescriptor.colorAttachments[3].loadAction = .clear
         gBufferRenderPassDescriptor.colorAttachments[3].storeAction = .store
         
@@ -283,14 +278,14 @@ class Renderer : NSObject, MTKViewDelegate
         frontFaceStencilOp.stencilCompareFunction = .always        // Stencil test always succeeds, only concerned about depth test
         frontFaceStencilOp.stencilFailureOperation = .keep         // Stencil test always succeeds
         frontFaceStencilOp.depthStencilPassOperation = .keep       // Do nothing if depth test passes
-        frontFaceStencilOp.depthFailureOperation = .decrementClamp // Decrement if depth test fails
+        frontFaceStencilOp.depthFailureOperation = .decrementWrap // Decrement if depth test fails
         
         // Increment when back faces depth fail
         let backFaceStencilOp: MTLStencilDescriptor = MTLStencilDescriptor()
         backFaceStencilOp.stencilCompareFunction = .always        // Stencil test always succeeds, only concerned about depth test
         backFaceStencilOp.stencilFailureOperation = .keep         // Stencil test always succeeds
         backFaceStencilOp.depthStencilPassOperation = .keep       // Do nothing if depth test passes
-        backFaceStencilOp.depthFailureOperation = .incrementClamp // Increment if depth test fails
+        backFaceStencilOp.depthFailureOperation = .incrementWrap // Increment if depth test fails
         
         let stencilPassDepthStencilStateDesc: MTLDepthStencilDescriptor = MTLDepthStencilDescriptor()
         stencilPassDepthStencilStateDesc.isDepthWriteEnabled = false           // Only concerned with modifying stencil buffer
@@ -317,15 +312,15 @@ class Renderer : NSObject, MTKViewDelegate
         // Get current render pass descriptor instead
         lightVolumeRenderPassDescriptor = MTLRenderPassDescriptor()
         lightVolumeRenderPassDescriptor.colorAttachments[0].clearColor = MTLClearColorMake(0.0, 0.0, 0.0, 1)
-        lightVolumeRenderPassDescriptor.colorAttachments[0].texture = gBufferClearTexture
+        lightVolumeRenderPassDescriptor.colorAttachments[0].texture = compositeTexture
         lightVolumeRenderPassDescriptor.colorAttachments[0].loadAction = .load // Each light volume is additive
         lightVolumeRenderPassDescriptor.colorAttachments[0].storeAction = .store
         lightVolumeRenderPassDescriptor.depthAttachment.clearDepth = 1.0
-        lightVolumeRenderPassDescriptor.depthAttachment.loadAction = .load
-        lightVolumeRenderPassDescriptor.depthAttachment.storeAction = .store
-        lightVolumeRenderPassDescriptor.depthAttachment.texture = gBufferDepthTexture
+        //lightVolumeRenderPassDescriptor.depthAttachment.loadAction = .load
+        //lightVolumeRenderPassDescriptor.depthAttachment.storeAction = .store
+        //lightVolumeRenderPassDescriptor.depthAttachment.texture = gBufferDepthTexture
         lightVolumeRenderPassDescriptor.stencilAttachment.loadAction = .load
-        lightVolumeRenderPassDescriptor.stencilAttachment.storeAction = .store
+        lightVolumeRenderPassDescriptor.stencilAttachment.storeAction = .dontCare
         lightVolumeRenderPassDescriptor.stencilAttachment.texture = gBufferDepthTexture
         
         // Build light volume render pipeline
@@ -350,37 +345,6 @@ class Renderer : NSObject, MTKViewDelegate
             fatalError("Failed to create lightVolume pipeline state, error \(error)")
         }
         
-        /*
-        let compositeRenderPipelineDesc = MTLRenderPipelineDescriptor()
-        compositeRenderPipelineDesc.label = "Composite Pipeline"
-        compositeRenderPipelineDesc.sampleCount = view.sampleCount
-        compositeRenderPipelineDesc.vertexFunction = library.makeFunction(name: "passThroughVertex")
-        compositeRenderPipelineDesc.fragmentFunction = library.makeFunction(name: "passThroughFragment")
-        compositeRenderPipelineDesc.colorAttachments[0].pixelFormat = view.colorPixelFormat
-        compositeRenderPipelineDesc.colorAttachments[0].isBlendingEnabled = true
-        compositeRenderPipelineDesc.colorAttachments[0].rgbBlendOperation = .add
-        compositeRenderPipelineDesc.colorAttachments[0].sourceRGBBlendFactor = .one
-        compositeRenderPipelineDesc.colorAttachments[0].destinationRGBBlendFactor = .one
-        compositeRenderPipelineDesc.colorAttachments[0].alphaBlendOperation = .add
-        compositeRenderPipelineDesc.colorAttachments[0].sourceAlphaBlendFactor = .one
-        compositeRenderPipelineDesc.colorAttachments[0].destinationAlphaBlendFactor = .one
-        compositeRenderPipelineDesc.depthAttachmentPixelFormat = view.depthStencilPixelFormat
-        do {
-            try compositeRenderPipeline = device.makeRenderPipelineState(descriptor: compositeRenderPipelineDesc)
-        } catch let error {
-            fatalError("Failed to create Composite pipeline state, error \(error)")
-        }
-        
-        compositeRenderPassDescriptor = MTLRenderPassDescriptor()
-        compositeRenderPassDescriptor.colorAttachments[0].clearColor = MTLClearColorMake(0.0, 0.0, 0.0, 1)
-        //compositeRenderPassDescriptor.colorAttachments[0].texture = gBufferClearTexture
-        compositeRenderPassDescriptor.colorAttachments[0].loadAction = .clear // Each light volume is additive
-        compositeRenderPassDescriptor.colorAttachments[0].storeAction = .store
-        compositeRenderPassDescriptor.depthAttachment.clearDepth = 1.0
-        compositeRenderPassDescriptor.depthAttachment.storeAction = .dontCare
-        compositeRenderPassDescriptor.depthAttachment.texture = gBufferDepthTexture
-        */
-        
         let stencilRenderPipelineDesc = MTLRenderPipelineDescriptor()
         stencilRenderPipelineDesc.label = "Stencil Pipeline"
         stencilRenderPipelineDesc.sampleCount = view.sampleCount
@@ -398,7 +362,7 @@ class Renderer : NSObject, MTKViewDelegate
         stencilRenderPassDescriptor.depthAttachment.loadAction = .load
         stencilRenderPassDescriptor.depthAttachment.storeAction = .store
         stencilRenderPassDescriptor.depthAttachment.texture = gBufferDepthTexture
-        stencilRenderPassDescriptor.stencilAttachment.loadAction = .load
+        stencilRenderPassDescriptor.stencilAttachment.loadAction = .clear
         stencilRenderPassDescriptor.stencilAttachment.storeAction = .store
         stencilRenderPassDescriptor.stencilAttachment.texture = gBufferDepthTexture
     
@@ -449,6 +413,9 @@ class Renderer : NSObject, MTKViewDelegate
         
         quadPositionBuffer = device.makeBuffer(bytes: quadVerts, length:quadVerts.count * MemoryLayout<Float>.size, options: []);
         
+        lightFragmentInput.screenSize.x = Float(view.drawableSize.width)
+        lightFragmentInput.screenSize.y = Float(view.drawableSize.height)
+        
         super.init()
         
         // Now that all of our members are initialized, set ourselves as the drawing delegate of the view
@@ -488,7 +455,7 @@ class Renderer : NSObject, MTKViewDelegate
         time = time + timestep
         //time = 1.0
         
-        let modelToWorldMatrix = matrix4x4_rotation(Float(1.0) * 0.5, vector_float3(0.7, 1, 0))
+        let modelToWorldMatrix = matrix4x4_rotation(Float(time) * 0.5, vector_float3(0.7, 1, 0))
         
         // So that the figure doesn't get distorted when the window changes size or rotates,
         // we factor the current aspect ration into our projection matrix. We also select
@@ -516,6 +483,7 @@ class Renderer : NSObject, MTKViewDelegate
             // Move lights
             lightAngle[i] += Float(timestep) * 0.5 * lightRate[i]
             lights[i].worldPosition = calcCartesianPositionFromPolar(angle: lightAngle[i], radius: lightRadius[i])
+            //lights[i].worldPosition = float3(0, 0.4, 0)
 
             let lightModelToWorldMatrix = matrix_multiply(matrix4x4_translation(lights[i].worldPosition.x, lights[i].worldPosition.y, lights[i].worldPosition.z), matrix4x4_scale(vector3(lights[i].radius, lights[i].radius, lights[i].radius)))
             mvMatrix = matrix_multiply(viewMatrix, lightModelToWorldMatrix);
@@ -527,9 +495,6 @@ class Renderer : NSObject, MTKViewDelegate
             lightConstants[i].near = nearZ;
             lightConstants[i].far = farZ;
         }
-        
-        lightFragmentInput.screenSize.x = Float(view.drawableSize.width)
-        lightFragmentInput.screenSize.y = Float(view.drawableSize.height)
     }
 
     func render(_ view: MTKView) {
@@ -563,7 +528,7 @@ class Renderer : NSObject, MTKViewDelegate
                                             indexBufferOffset: 0)
         gBufferEncoder.popDebugGroup()
         gBufferEncoder.endEncoding()
-        commandBuffer.enqueue()
+
         commandBuffer.commit()
 
         
@@ -588,7 +553,6 @@ class Renderer : NSObject, MTKViewDelegate
             stencilPassEncoder.endEncoding()
         }
 
-        stencilPassCommandBuffer.enqueue()
         stencilPassCommandBuffer.commit()
     
         
@@ -621,36 +585,8 @@ class Renderer : NSObject, MTKViewDelegate
             lightEncoder.popDebugGroup()
             lightEncoder.endEncoding()
         }
-        
-        commandBuffer2.enqueue()
+
         commandBuffer2.commit()
-        
-        /*
-        let commandBuffer3 = commandQueue.makeCommandBuffer()
-        compositeRenderPassDescriptor.colorAttachments[0].texture = currDrawable!.texture
-        let compositeEncoder = commandBuffer3.makeRenderCommandEncoder(descriptor: compositeRenderPassDescriptor)
-        compositeEncoder.pushDebugGroup("Composite Pass")
-        
-        compositeEncoder.setFrontFacing(.clockwise)
-        compositeEncoder.setDepthStencilState(lightVolumeDepthStencilState)
-        compositeEncoder.setRenderPipelineState(compositeRenderPipeline)
-        compositeEncoder.setVertexBuffer(quadPositionBuffer, offset: 0, at: 0)
-        compositeEncoder.setFragmentTexture(gBufferClearTexture, at: 0)
-        compositeEncoder.setFragmentSamplerState(lightVolumeSampler, at: 0)
-        compositeEncoder.setFragmentBytes(&lightFragmentInput, length: MemoryLayout<LightFragmentInput>.size, at: 0)
-        compositeEncoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 6)
-        
-        compositeEncoder.popDebugGroup()
-        compositeEncoder.endEncoding()
-        
-        if let drawable = view.currentDrawable
-        {
-            commandBuffer3.present(drawable)
-        }
-        
-        commandBuffer3.enqueue()
-        commandBuffer3.commit()
-        */
         
         let commandBuffer3 = commandQueue.makeCommandBuffer()
         var blitEncoder = commandBuffer3.makeBlitCommandEncoder()
@@ -658,7 +594,7 @@ class Renderer : NSObject, MTKViewDelegate
         let origin: MTLOrigin = MTLOriginMake(0, 0, 0)
         let size: MTLSize = MTLSizeMake(Int(self.view.drawableSize.width), Int(self.view.drawableSize.height), 1)
         //let size: MTLSize = MTLSizeMake(Int(512), Int(512), 1)
-        blitEncoder.copy(from: gBufferClearTexture, sourceSlice: 0, sourceLevel: 0, sourceOrigin: origin, sourceSize: size, to: (currDrawable?.texture)!, destinationSlice: 0, destinationLevel: 0, destinationOrigin: origin)
+        blitEncoder.copy(from: compositeTexture, sourceSlice: 0, sourceLevel: 0, sourceOrigin: origin, sourceSize: size, to: (currDrawable?.texture)!, destinationSlice: 0, destinationLevel: 0, destinationOrigin: origin)
         blitEncoder.endEncoding()
         blitEncoder.popDebugGroup()
 
@@ -667,7 +603,6 @@ class Renderer : NSObject, MTKViewDelegate
             commandBuffer3.present(drawable)
         }
 
-        commandBuffer3.enqueue()
         commandBuffer3.commit()
     }
     
@@ -677,6 +612,9 @@ class Renderer : NSObject, MTKViewDelegate
         
         print(width)
         print(height)
+        
+        lightFragmentInput.screenSize.x = Float(width)
+        lightFragmentInput.screenSize.y = Float(height)
         
         let albedoDesc: MTLTextureDescriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba8Unorm, width: width, height: height, mipmapped: false)
         albedoDesc.sampleCount = 1
@@ -720,7 +658,7 @@ class Renderer : NSObject, MTKViewDelegate
         clearDesc.textureType = .type2D
         clearDesc.usage = [.renderTarget, .shaderRead]
         
-        gBufferClearTexture = device.makeTexture(descriptor: clearDesc)
+        compositeTexture = device.makeTexture(descriptor: clearDesc)
         
         gBufferRenderPassDescriptor.colorAttachments[1].texture = gBufferAlbedoTexture
 
@@ -728,13 +666,13 @@ class Renderer : NSObject, MTKViewDelegate
 
         gBufferRenderPassDescriptor.colorAttachments[2].texture = gBufferPositionTexture
 
-        gBufferRenderPassDescriptor.colorAttachments[3].texture = gBufferClearTexture
+        gBufferRenderPassDescriptor.colorAttachments[3].texture = compositeTexture
 
         gBufferRenderPassDescriptor.depthAttachment.texture = gBufferDepthTexture
 
         gBufferRenderPassDescriptor.stencilAttachment.texture = gBufferDepthTexture
 
-        lightVolumeRenderPassDescriptor.colorAttachments[0].texture = gBufferClearTexture
+        lightVolumeRenderPassDescriptor.colorAttachments[0].texture = compositeTexture
 
         lightVolumeRenderPassDescriptor.depthAttachment.texture = gBufferDepthTexture
         
