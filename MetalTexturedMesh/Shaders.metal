@@ -107,7 +107,7 @@ vertex LightVertexOut lightVolumeVert(const device LightVertexIn *vertices [[buf
 fragment float4 lightVolumeFrag(LightVertexOut in [[stage_in]],
                                 constant LightFragmentInput *lightData [[ buffer(0) ]],
                                 constant PointLight *pointLight [[ buffer(1) ]],
-                                texture2d<unsigned> albedoTexture [[ texture(0) ]],
+                                texture2d<float> albedoTexture [[ texture(0) ]],
                                 texture2d<float> normalsTexture [[ texture(1) ]],
                                 texture2d<float> positionTexture [[ texture(2) ]])
 {
@@ -116,10 +116,7 @@ fragment float4 lightVolumeFrag(LightVertexOut in [[stage_in]],
     
     constexpr sampler texSampler;
     
-    // Convert unsigned texture value to float value
-    vec<unsigned, 4> albedoUnsigned = albedoTexture.sample(texSampler, sampleCoords);
-    float3 albedo = normalize(float3(albedoUnsigned.x, albedoUnsigned.y, albedoUnsigned.z)) / normalize(float3(1.0, 1.0, 1.0));
-    //albedo = float3(1.0, 1.0, 1.0);
+    float3 albedo = float3(albedoTexture.sample(texSampler, sampleCoords));
     const float3 worldPosition = float3(positionTexture.sample(texSampler, sampleCoords));
     const float3 normal = normalize(float3(normalsTexture.sample(texSampler, sampleCoords)));
     const float3 camPos = float3(0, 0, 4.5);
